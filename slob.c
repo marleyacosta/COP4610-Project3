@@ -300,6 +300,9 @@ static void slob_free_pages(void *b, int order)
 }
 
 //Modified to use best-fit instead of first-fit to find a block inside the page 
+//Instead of allocating the first block that we encounter with enough space
+//we want to keep track of the best block yet and allocate it at the end 
+//after traversing the enitre list of blocks.
 
 /*
  * Allocate a slob block within a given slob_page sp.
@@ -437,9 +440,8 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
                 if(small){
                     slob_amt_free[count] = free_mem * SLOB_UNIT - SLOB_UNIT + 1;
                     slob_amt_claimed[count] = size;
-                    //we also need to update count. We could use % instead of the if statement but to change it up a bit we can use if
 		    count++;
-		    if(count >= 10)
+		    if(count >= 50)
 		    	count = 0;
                 }
 
