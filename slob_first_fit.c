@@ -406,13 +406,10 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 		spin_lock_irqsave(&slob_lock, flags);
     
 		if(small){
-			//maybe it is important that this part is inside the lock
 			slob_amt_free[count] = free_mem * SLOB_UNIT - SLOB_UNIT + 1;
 			slob_amt_claimed[count] = size;
-			//we also need to update count. We could also use % instead of the if statements but to change it up a bit we can use the ifs
-			if(count < 50)
-				count++;
-			else
+			count++;
+			if(count >= 50)
 				count = 0;
 		}
     
