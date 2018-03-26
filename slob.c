@@ -101,7 +101,7 @@ We need these two arrays to keep the track of the degree of fragmentation
 
 long slob_amt_claimed[50];//to keep the las 50 measures of the memory claimed by the slob allocator for small allocations 
 long slob_amt_free[50];//to keep the last 50 measures of memory not served in an allocation request
-int count = 0// we need a counter to keep track of the current number of memory requests 
+int count = 0;// we need a counter to keep track of the current number of memory requests 
 
 
 
@@ -374,7 +374,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 {
 	struct slob_page *sp;
 	struct slob_page *best = NULL;//variable to keep track of the best page yet
-	struct list_head *prev;
+	//struct list_head *prev;//we don't need prev since we are not implementing next-fit
 	struct list_head *slob_list;
 	slob_t *b = NULL;
 	unsigned long flags;
@@ -395,7 +395,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 	/* Iterate through each partially free page, try to find room */
 	list_for_each_entry(sp, slob_list, list) {
                 //to the get the free memory that is not being used due to fragmentation 
-		free_mem = free_mem + sp->untis;
+		free_mem = free_mem + sp->units;
 #ifdef CONFIG_NUMA
 		/*
 		 * If there's a node specification, search for a partial
