@@ -83,8 +83,10 @@ We need these two arrays to keep the track of the fragmentation
 ***************************************************************************************
 */
 
-long slob_amt_claimed[50];//to keep the las 50 measures of the memory claimed by the slob allocator for small allocations
-long slob_amt_free[50];//to keep the last 50 measures of memory not served in an allocation request
+int lastMeasures = 50;
+
+long slob_amt_claimed[lastMeasures];//to keep the las 50 measures of the memory claimed by the slob allocator for small allocations
+long slob_amt_free[lastMeasures];//to keep the last 50 measures of memory not served in an allocation request
 int count = 0;// we need a counter to keep track of the current number of memory requests
 
 
@@ -345,7 +347,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 	struct list_head *slob_list;
 	slob_t *b = NULL;
 	unsigned long flags;
-  
+
 	long free_mem = 0;
 	int small = 0;
 
@@ -404,7 +406,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 		sp = slob_page(b);
 		set_slob_page(sp);
 		spin_lock_irqsave(&slob_lock, flags);
-    
+
 		if(small){
 			slob_amt_free[count] = free_mem * SLOB_UNIT - SLOB_UNIT + 1;
 			slob_amt_claimed[count] = size;
@@ -412,7 +414,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 			if(count >= 50)
 				count = 0;
 		}
-    
+
 		sp->units = SLOB_UNITS(PAGE_SIZE);
 		sp->free = b;
 		INIT_LIST_HEAD(&sp->list);
@@ -743,10 +745,10 @@ void __init kmem_cache_init_late(void)
 asmlinkage long sys_get_slob_amt_claimed(void){
 	long avg = 0, total = 0;
 	int i;
-	for(i = 0; i < count; i++){
+	for(i = 0; i < lastMeasures; i++){
 		total = total + slob_amt_claimed[i];
 	}
-	avg = total/(count);
+	avg = total/(lastMeasures);
 	return avg;
 }
 
@@ -754,10 +756,10 @@ asmlinkage long sys_get_slob_amt_claimed(void){
 asmlinkage long sys_get_slob_amt_free(void){
 	long avg = 0, total = 0;
 	int i;
-	for(i = 0; i < count; i++){
+	for(i = 0; i < lastMeasures; i++){
 		total = total + slob_amt_free[i];
 	}
-	avg = total/(count);
+	avg = total/(lastMeasures);
 	return avg;
 
 }
