@@ -5,10 +5,11 @@
  *
  * NUMA support by Paul Mundt, 2007.
  *
- * Modified by Tomas Ortega and Maurely Acosta to implement the best-fit algorithm instead of the first-fit algorithm
+ * Modified by Tomas Ortega and Maurely Acosta to implement the best-fit
+ * algorithm instead of the first-fit algorithm
  *
  *
- ************************description of what each member did**********************************************
+ ************************ Description of the changes you made *******************
  *
  *
  *
@@ -99,9 +100,10 @@ We need these two arrays to keep the track of the degree of fragmentation
 ***************************************************************************************
 */
 
-long slob_amt_claimed[50];//to keep the las 50 measures of the memory claimed by the slob allocator for small allocations 
-long slob_amt_free[50];//to keep the last 50 measures of memory not served in an allocation request
-int count = 0;// we need a counter to keep track of the current number of memory requests 
+int lastMeasures = 50;
+long slob_amt_claimed[lastMeasures];//to keep the las 50 measures of the memory claimed by the slob allocator for small allocations
+long slob_amt_free[lastMeasures];//to keep the last 50 measures of memory not served in an allocation request
+int count = 0;// we need a counter to keep track of the current number of memory requests
 
 
 
@@ -297,7 +299,7 @@ static void slob_free_pages(void *b, int order)
 	free_pages((unsigned long)b, order);
 }
 
-//Modified to use best-fit instead of first-fit to find a block inside the page sp
+//Modified to use best-fit instead of first-fit to find a block inside the page 
 
 /*
  * Allocate a slob block within a given slob_page sp.
@@ -308,7 +310,7 @@ static void *slob_page_alloc(struct slob_page *sp, size_t size, int align)
 	int delta = 0, units = SLOB_UNITS(size);
 
 	//variables for Project 3 to implement best-fit
-	//we need to keep track of all variables that depend on cur and update them when we find a better fit  
+	//we need to keep track of all variables that depend on cur and update them when we find a better fit
 	slobidx_t bf_avail;
 	int bf_delta = 0;
 	slob_t *bf_prev;
@@ -316,7 +318,7 @@ static void *slob_page_alloc(struct slob_page *sp, size_t size, int align)
 	slob_t *best = NULL;
 
 	for (prev = NULL, cur = sp->free; ; prev = cur, cur = slob_next(cur)) {
-		slobidx_t avail = slob_units(cur);//we want to minimize avail for the best-fit algorithm 
+		slobidx_t avail = slob_units(cur);//we want to minimize avail for the best-fit algorithm
 
 		if (align) {
 			aligned = (slob_t *)ALIGN((unsigned long)cur, align);
@@ -328,8 +330,8 @@ static void *slob_page_alloc(struct slob_page *sp, size_t size, int align)
 				/* Notice that only if best is not null we evaluate avail < bf_avail */
 				bf_avail = avail;
 				best = cur;
-				bf_prev = prev; 
-				bf_delta = delta; 
+				bf_prev = prev;
+				bf_delta = delta;
 				bf_aligned = aligned;
 			}
 		}
@@ -339,13 +341,13 @@ static void *slob_page_alloc(struct slob_page *sp, size_t size, int align)
 				return NULL;
 			}
 			slob_t *next;
-			//We can fill the best block at the end of the list 
+			//We can fill the best block at the end of the list
 			if(bf_delta){ /* need to fragment head to align? */
 				next = slob_next(best);
 				set_slob(bf_aligned, bf_avail - bf_delta, next);
 				set_slob(best, bf_delta, bf_aligned);
 				bf_prev = best;
-				best = bf_aligned; 
+				best = bf_aligned;
 				bf_avail = slob_units(best);
 			}
 			next = slob_next(best);
@@ -353,7 +355,7 @@ static void *slob_page_alloc(struct slob_page *sp, size_t size, int align)
 				if(bf_prev)
 					set_slob(bf_prev, slob_units(bf_prev), next);
 				else
-					sp->free = best + units; 
+					sp->free = best + units;
 				set_slob(best + units, bf_avail - units, next);
 			}
 			sp->units -= units;
@@ -378,9 +380,9 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 	struct list_head *slob_list;
 	slob_t *b = NULL;
 	unsigned long flags;
-	long free_mem = 0; 
+	long free_mem = 0;
         int small = 0;
-        //Since we only want to keep track of the small memory allocations we can use a flag 
+        //Since we only want to keep track of the small memory allocations we can use a flag
 	if (size < SLOB_BREAK1){
 		slob_list = &free_slob_small;
                 small = 1;
@@ -394,7 +396,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 
 	/* Iterate through each partially free page, try to find room */
 	list_for_each_entry(sp, slob_list, list) {
-                //to the get the free memory that is not being used due to fragmentation 
+                //to the get the free memory that is not being used due to fragmentation
 		free_mem = free_mem + sp->units;
 #ifdef CONFIG_NUMA
 		/*
@@ -408,7 +410,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 		if (sp->units < SLOB_UNITS(size))
 			continue;
 
-		//Keep the page with the best fit. 
+		//Keep the page with the best fit.
 		if(best == NULL || best->units > sp->units){
 			best = sp;
 		}
@@ -416,7 +418,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 
 	if(best != NULL){
 		/* Attempt to alloc */
-		b = slob_page_alloc(best, size, align);	
+		b = slob_page_alloc(best, size, align);
 	}
 
 	spin_unlock_irqrestore(&slob_lock, flags);
@@ -434,7 +436,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 		//maybe it is important that this part is inside the lock
                 if(small){
                     slob_amt_free[count] = free_mem * SLOB_UNIT - SLOB_UNIT + 1;
-                    slob_amt_claimed[count] = size; 
+                    slob_amt_claimed[count] = size;
                     //we also need to update count. We could use % instead of the if statement but to change it up a bit we can use if
 		    count++;
 		    if(count >= 10)
@@ -768,12 +770,12 @@ void __init kmem_cache_init_late(void)
 //Implementation of system calls to test Algorithms
 
 asmlinkage long sys_get_slob_amt_claimed(void){
-	long avg = 0, total = 0; 
+	long avg = 0, total = 0;
 	int i;
-	for(i = 0; i < count; i++){
+	for(i = 0; i < lastMeasures; i++){
 		total = total + slob_amt_claimed[i];
 	}
-	avg = total/(count);
+	avg = total/(lastMeasures);
 	return avg;
 }
 
@@ -781,13 +783,10 @@ asmlinkage long sys_get_slob_amt_claimed(void){
 asmlinkage long sys_get_slob_amt_free(void){
 	long avg = 0, total = 0;
 	int i;
-	for(i = 0; i <= count; i++){
+	for(i = 0; i <= lastMeasures; i++){
 		total = total + slob_amt_free[i];
 	}
-	avg = total/(count);
+	avg = total/(lastMeasures);
 	return avg;
 
 }
-
-
-
