@@ -436,10 +436,9 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
                     slob_amt_free[count] = free_mem * SLOB_UNIT - SLOB_UNIT + 1;
                     slob_amt_claimed[count] = size; 
                     //we also need to update count. We could use % instead of the if statement but to change it up a bit we can use if
-                    if(count < 50)
-                            count++;
-                    else
-                            count = 0;
+		    count++;
+		    if(count >= 10)
+		    	count = 0;
                 }
 
 		sp->units = SLOB_UNITS(PAGE_SIZE);
