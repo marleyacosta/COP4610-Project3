@@ -85,7 +85,7 @@ We need these two arrays to keep the track of the fragmentation
 
 long slob_amt_claimed[50];//to keep the las 50 measures of the memory claimed by the slob allocator for small allocations
 long slob_amt_free[50];//to keep the last 50 measures of memory not served in an allocation request
-int count = 0// we need a counter to keep track of the current number of memory requests
+int count = 0;// we need a counter to keep track of the current number of memory requests
 
 
 
