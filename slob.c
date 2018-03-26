@@ -380,7 +380,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 	unsigned long flags;
 	long free_mem = 0; 
         int small = 0;
-        //Since we only want to keep track of the small memory allocations we can use flag 
+        //Since we only want to keep track of the small memory allocations we can use a flag 
 	if (size < SLOB_BREAK1){
 		slob_list = &free_slob_small;
                 small = 1;
