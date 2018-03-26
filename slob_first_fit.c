@@ -364,7 +364,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 
 		//for the first fit algorithm since we are only interested in the memory not used in an allocation requests
 		//the list is going to be iterated all the way through so we don't need a separate loop
-		free_mem = free_mem + sp->untis;
+		free_mem = free_mem + sp->units;
 #ifdef CONFIG_NUMA
 		/*
 		 * If there's a node specification, search for a partial
