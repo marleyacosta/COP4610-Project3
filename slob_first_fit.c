@@ -56,7 +56,7 @@
  * the freelist will only be done so on pages residing on the same node,
  * in order to prevent random node placement.
  */
-
+#include <linux/linkage.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
