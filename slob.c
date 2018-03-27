@@ -1,5 +1,5 @@
 /*
- * SLOB Allocator: Simple List Of Blocks
+ *SLOB Allocator: Simple List Of Blocks
  *
  * Matt Mackall <mpm@selenic.com> 12/30/03
  *
@@ -381,7 +381,7 @@ static int slob_check_page(struct slob_page *sp, size_t size, int align)
 		}
 
 		if (avail >= units + delta){ /* room enough? */
-			if(best_cur == NULL || avail - (units + delta) < fit){ /* better fit? */
+			if(best == NULL || avail - (units + delta) < fit){ /* better fit? */
 				best = cur;//update the current best
 				fit = avail - (units + delta);//and keep track of the free memory
 				if(fit == 0)
@@ -825,4 +825,3 @@ asmlinkage long sys_get_slob_amt_free(void){
 	return avg;
 
 }
-
