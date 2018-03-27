@@ -143,10 +143,10 @@ static LIST_HEAD(free_slob_medium);
 static LIST_HEAD(free_slob_large);
 
 // arrays for the system calls
-long slob_amt_claimed [100];//contains the amount of memory claimed by the slob allocator
-long slob_amt_free [100];//contains the amount of memory not used
+#define lastMeasures 50
+long slob_amt_claimed [lastMeasures];//contains the amount of memory claimed by the slob allocator
+long slob_amt_free [lastMeasures];//contains the amount of memory not used
 int count = 0;//we need to keep track of how many items there are in the arrays
-int lastMeasures = 50;
 
 
 /*
