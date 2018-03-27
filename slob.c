@@ -16,12 +16,6 @@
  *
  *
  *
- *
- *
- *
- *
- *
- *
  * How SLOB works:
  *
  * The core of SLOB is a traditional K&R style heap allocator, with
@@ -73,7 +67,8 @@
  * the freelist will only be done so on pages residing on the same node,
  * in order to prevent random node placement.
  */
-#include <linux/linkage.h>
+
+#include <linux/linkage.h>//we need this for the system calls
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
@@ -88,24 +83,6 @@
 #include <trace/events/kmem.h>
 
 #include <asm/atomic.h>
-
-
-
-
-
-
-/*
-***************************************************************************************
-We need these two arrays to keep the track of the degree of fragmentation
-***************************************************************************************
-*/
-
-int lastMeasures = 50;
-long slob_amt_claimed[lastMeasures];//to keep the las 50 measures of the memory claimed by the slob allocator for small allocations
-long slob_amt_free[lastMeasures];//to keep the last 50 measures of memory not served in an allocation request
-int count = 0;// we need a counter to keep track of the current number of memory requests
-
-
 
 /*
  * slob_block has a field 'units', which indicates size of block if +ve,
@@ -164,6 +141,12 @@ static inline void free_slob_page(struct slob_page *sp)
 static LIST_HEAD(free_slob_small);
 static LIST_HEAD(free_slob_medium);
 static LIST_HEAD(free_slob_large);
+
+// arrays for the system calls
+long slob_amt_claimed [100];//contains the amount of memory claimed by the slob allocator
+long slob_amt_free [100];//contains the amount of memory not used
+int count = 0;//we need to keep track of how many items there are in the arrays
+
 
 /*
  * is_slob_page: True for all slob pages (false for bigblock pages)
@@ -299,11 +282,10 @@ static void slob_free_pages(void *b, int order)
 	free_pages((unsigned long)b, order);
 }
 
-//Modified to use best-fit instead of first-fit to find a block inside the page 
+//Modified to use best-fit instead of first-fit to find a block inside the page
 //Instead of allocating the first block that we encounter with enough space
-//we want to keep track of the best block yet and allocate it at the end 
+//we want to keep track of the best block yet and allocate it at the end
 //after traversing the enitre list of blocks.
-
 /*
  * Allocate a slob block within a given slob_page sp.
  */
@@ -313,94 +295,141 @@ static void *slob_page_alloc(struct slob_page *sp, size_t size, int align)
 	int delta = 0, units = SLOB_UNITS(size);
 
 	//variables for Project 3 to implement best-fit
-	//we need to keep track of all variables that depend on cur and update them when we find a better fit
-	slobidx_t bf_avail;
-	int bf_delta = 0;
-	slob_t *bf_prev;
+  //we need to keep track of all variables that depend on cur and update them when we find a better fit
+	//bf is for best-fit
 	slob_t *bf_aligned = NULL;
+	slob_t *bf_prev = NULL;
 	slob_t *best = NULL;
+	int bf_delta = 0;
+	slobidx_t bf_room_avail = 0;//we need the block with the least amount of extra space
+	slobidx_t bf_avail = 0;
 
 	for (prev = NULL, cur = sp->free; ; prev = cur, cur = slob_next(cur)) {
-		slobidx_t avail = slob_units(cur);//we want to minimize avail for the best-fit algorithm
+		slobidx_t avail = slob_units(cur);
+
+		if (align) {
+			aligned = (slob_t *)ALIGN((unsigned long)cur, align);
+			delta = aligned - cur;
+		}
+		if (avail >= units + delta ) { /* room enough? */
+			if(best == NULL || avail - (units + delta) < bf_room_avail){
+				bf_prev = prev;
+				best = cur;
+				bf_aligned = aligned;
+				bf_delta = delta;
+				bf_room_avail = avail - (units + delta);
+				bf_avail = avail;
+			}
+		}
+		if (slob_last(cur)) {
+			if (best != NULL) {
+				slob_t *next = NULL;
+
+				if (bf_delta) { /* need to fragment head to align? */
+					next = slob_next(best);
+					set_slob(bf_aligned, bf_avail - bf_delta, next);
+					set_slob(best, bf_delta, bf_aligned);
+					bf_prev = best;
+					best = bf_aligned;
+					bf_avail = slob_units(best);
+				}
+
+				next = slob_next(best);
+				if (bf_avail == units) { /* exact fit? unlink. */
+					if (bf_prev)
+						set_slob(bf_prev, slob_units(bf_prev), next);
+					else
+						sp->free = next;
+				} else { /* fragment */
+					if (bf_prev)
+					set_slob(bf_prev, slob_units(bf_prev), best + units);
+					else
+						sp->free = best + units;
+					set_slob(best + units, bf_avail - units, next);
+				}
+
+				sp->units -= units;
+				if (!sp->units)
+					clear_slob_page_free(sp);
+				return best;
+			}
+			return NULL;
+		}
+	}
+}
+
+/*
+ * Helper function for slob_alloc() to check if the page has enough available space
+ * This functions works almost exactly as slob_page_alloc() but instead of allocating
+ * the block in the page it just returns the amount of free space left after the allocation
+ */
+static int slob_check_page(struct slob_page *sp, size_t size, int align)
+{
+	slob_t *prev, *cur, *aligned = NULL;
+	int delta = 0, units = SLOB_UNITS(size);
+
+	slob_t *best = NULL;
+	slobidx_t fit = 0;//we are looking for the tightest fit possible
+
+	for (prev = NULL, cur = sp->free; ; prev = cur, cur = slob_next(cur)) {
+		slobidx_t avail = slob_units(cur);
 
 		if (align) {
 			aligned = (slob_t *)ALIGN((unsigned long)cur, align);
 			delta = aligned - cur;
 		}
 
-		if (avail >= units + delta) { /* room enough? */
-			if(best == NULL || avail < bf_avail){
-				/* Notice that only if best is not null we evaluate avail < bf_avail */
-				bf_avail = avail;
-				best = cur;
-				bf_prev = prev;
-				bf_delta = delta;
-				bf_aligned = aligned;
+		if (avail >= units + delta){ /* room enough? */
+			if(best_cur == NULL || avail - (units + delta) < fit){ /* better fit? */
+				best = cur;//update the current best
+				fit = avail - (units + delta);//and keep track of the free memory
+				if(fit == 0)
+					return 0;
 			}
 		}
-
-		if (slob_last(cur)){
-			if(best == NULL){
-				return NULL;
+		if (slob_last(cur)) {
+			if (best != NULL){
+				return fit;
+			}else{
+				return -1;//return an invalid value if there is no best block
 			}
-			slob_t *next;
-			//We can fill the best block at the end of the list
-			if(bf_delta){ /* need to fragment head to align? */
-				next = slob_next(best);
-				set_slob(bf_aligned, bf_avail - bf_delta, next);
-				set_slob(best, bf_delta, bf_aligned);
-				bf_prev = best;
-				best = bf_aligned;
-				bf_avail = slob_units(best);
-			}
-			next = slob_next(best);
-			if(bf_avail == units){ /* exact fit? unlink. */
-				if(bf_prev)
-					set_slob(bf_prev, slob_units(bf_prev), next);
-				else
-					sp->free = best + units;
-				set_slob(best + units, bf_avail - units, next);
-			}
-			sp->units -= units;
-			if(!sp->units)
-				clear_slob_page_free(sp);
-			return best;
 		}
 	}
 }
 
-
 //Modified to use the best-fit algorithm instead of next-fit to find a page
-
 /*
  * slob_alloc: entry point into the slob allocator.
  */
 static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 {
 	struct slob_page *sp;
-	struct slob_page *best = NULL;//variable to keep track of the best page yet
-	//struct list_head *prev;//we don't need prev since we are not implementing next-fit
+	struct slob_page *best = NULL;//needed to keep track of the best page so far.
+	struct list_head *prev;
 	struct list_head *slob_list;
 	slob_t *b = NULL;
 	unsigned long flags;
+
 	long free_mem = 0;
-        int small = 0;
-        //Since we only want to keep track of the small memory allocations we can use a flag
+  int small = 0;//Since we only want to keep track of the small memory allocations we can use a flag
+	int best_fit = -1;//needed to keep the amount of memory left when choosing the best page
+
 	if (size < SLOB_BREAK1){
 		slob_list = &free_slob_small;
-                small = 1;
-        }else if (size < SLOB_BREAK2){
+		small = 1;
+	}else if (size < SLOB_BREAK2){
 		slob_list = &free_slob_medium;
-        }else{
+	}else{
 		slob_list = &free_slob_large;
-        }
+	}
 
 	spin_lock_irqsave(&slob_lock, flags);
 
 	/* Iterate through each partially free page, try to find room */
 	list_for_each_entry(sp, slob_list, list) {
-                //to the get the free memory that is not being used due to fragmentation
-		free_mem = free_mem + sp->units;
+		int cf = -1;//the amount of memory left after allocating the current page 
+		free_mem = free_mem + sp->units;//to the get the free memory that is not being used due to fragmentation
+
 #ifdef CONFIG_NUMA
 		/*
 		 * If there's a node specification, search for a partial
@@ -413,19 +442,24 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 		if (sp->units < SLOB_UNITS(size))
 			continue;
 
-		//Keep the page with the best fit.
-		if(best == NULL || best->units > sp->units){
+		cf = slob_check_page(sp, size, align);
+
+		if(cf >= 0 && (best_fit == -1 || cf < best_fit) ) {//if it is not a perfect fit we continue searching
 			best = sp;
+			best_fit = cf;
+			if(cf == 0) {//if cf is 0, sp is a perfect fit
+				break;//we can break out of the loop since we found the perfect fit
+			}
 		}
+		continue;
 	}
 
-	if(best != NULL){
+	if(best_fit >= 0) {
 		/* Attempt to alloc */
 		b = slob_page_alloc(best, size, align);
 	}
 
 	spin_unlock_irqrestore(&slob_lock, flags);
-
 
 	/* Not enough space: must allocate a new page */
 	if (!b) {
@@ -434,17 +468,14 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align, int node)
 			return NULL;
 		sp = slob_page(b);
 		set_slob_page(sp);
+
 		spin_lock_irqsave(&slob_lock, flags);
 
-		//maybe it is important that this part is inside the lock
-                if(small){
-                    slob_amt_free[count] = free_mem * SLOB_UNIT - SLOB_UNIT + 1;
-                    slob_amt_claimed[count] = size;
-		    count++;
-		    if(count >= 50)
-		    	count = 0;
-                }
-
+		if(small){
+    	slob_amt_claimed[count] = size;
+      slob_amt_free[count] = free_mem * SLOB_UNIT - SLOB_UNIT + 1;//we need the amount in bytes
+      count = (count + 1) % 50;
+		}
 		sp->units = SLOB_UNITS(PAGE_SIZE);
 		sp->free = b;
 		INIT_LIST_HEAD(&sp->list);
@@ -769,8 +800,9 @@ void __init kmem_cache_init_late(void)
 {
 	/* Nothing to do */
 }
-//Implementation of system calls to test Algorithms
 
+//System Calls for Project 3
+//Implementation of the system calls to test the degree of fragmentation of the algorithms
 asmlinkage long sys_get_slob_amt_claimed(void){
 	long avg = 0, total = 0;
 	int i;
@@ -792,3 +824,4 @@ asmlinkage long sys_get_slob_amt_free(void){
 	return avg;
 
 }
+
